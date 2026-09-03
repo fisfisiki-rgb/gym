@@ -191,7 +191,10 @@ svg{display:block}
   letter-spacing:.06em;
   text-transform:uppercase;
 }
-#dateInput{position:absolute;opacity:0;width:1px;height:1px;pointer-events:none}
+.dateWrap{position:relative;min-width:0}
+.dateWrap .dateBtn{width:100%}
+#dateInput{position:absolute;left:0;top:0;width:100%;height:100%;opacity:0;
+  border:none;background:none;padding:0;margin:0;font:inherit;color:transparent}
 
 .strip{
   display:grid;
@@ -982,9 +985,11 @@ svg{display:block}
   </div>
   <div class="nav">
     <button class="arrow" id="prev" aria-label="Önceki gün"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
-    <button class="dateBtn" id="dateBtn"><span class="dateMain" id="dateMain"></span><span class="dateSub" id="dateSub"></span></button>
+    <div class="dateWrap">
+      <button class="dateBtn" id="dateBtn" tabindex="-1"><span class="dateMain" id="dateMain"></span><span class="dateSub" id="dateSub"></span></button>
+      <input type="date" id="dateInput" aria-label="Tarih seç">
+    </div>
     <button class="arrow" id="next" aria-label="Sonraki gün"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
-    <input type="date" id="dateInput">
   </div>
   <div class="strip" id="strip"></div>
   <div class="focusRow" id="focusRow"></div>
@@ -1062,11 +1067,18 @@ var SEED = {
   ex("Cable V bar row",[st(79,"kg",8,1),st(79,"kg",7,1),st(79,"kg",7,0)]),
   ex("Rear delt fly",[st(45,"kg",12,1),st(45,"kg",10,1),st(45,"kg",10,0)]),
   ex("Dependent biceps curl machine",[st(35.4,"kg",11,1),st(36,"kg",10,0),st(36,"kg",9,0)]),
-  ex("Dumbbell hammer curl",[st(20,"kg",14,1,"her el"),st(50,"lbs",10,1,"her el"),st(50,"lbs",10,0,"her el")])]}
+  ex("Dumbbell hammer curl",[st(20,"kg",14,1,"her el"),st(50,"lbs",10,1,"her el"),st(50,"lbs",10,0,"her el")])]},
+ "2026-09-03":{focus:"bacak",exercises:[
+  ex("Plate loaded leg press",[st(220,"kg",12,1,"+starting"),st(240,"kg",10,1),st(250,"kg",10,0)]),
+  ex("Seated leg curl machine",[st(59,"kg",12,1),st(64.1,"kg",7,0),st(59,"kg",9,0)]),
+  ex("Magnum seated calf plate loaded",[st(100,"lbs",12,0,"+starting"),st(100,"lbs",11,1),st(100,"lbs",12,0)]),
+  ex("Cable ab crunches",[st(50,"kg",13,1,"v bar"),st(50,"kg",9,1,"v bar"),st(45,"kg",10,0,"v bar")])]}
 };
+// SEED'e yeni gün eklendiğinde artır: uygulamayı zaten açmış cihazlar da alsın.
+var SEED_SURUM = 2;
 
 /* ---------- durum ---------- */
-var D = {defaultUnit:"kg",days:{},seeded:false,updatedAt:new Date(0).toISOString()};
+var D = {defaultUnit:"kg",days:{},seedVersion:0,updatedAt:new Date(0).toISOString()};
 var CFG = {owner:"",repo:"",path:"log.json",branch:"main",token:""};
 var date = iso(new Date()), today = iso(new Date());
 var sha = null, syncState = "off", syncMsg = "", pushTimer = null, confirmEx = null, expandedEx = null;
@@ -1074,9 +1086,16 @@ var sha = null, syncState = "off", syncMsg = "", pushTimer = null, confirmEx = n
 try{var rawCfg=localStorage.getItem(LSCFG); if(rawCfg) CFG=Object.assign(CFG,JSON.parse(rawCfg));}catch(e){}
 try{
   var raw=localStorage.getItem(LS);
-  if(raw){var p=JSON.parse(raw); if(p&&p.days) D=Object.assign(D,p);}
+  if(raw){var p=JSON.parse(raw); if(p&&p.days) D=normalize(p);}
 }catch(e){}
-if(!D.seeded){ D.days=Object.assign({},SEED,D.days); D.seeded=true; }
+// SEED'de olup cihazda olmayan günleri ekler; mevcut kayıtların üstüne yazmaz.
+function tohumla(){
+  if(D.seedVersion>=SEED_SURUM) return false;
+  Object.keys(SEED).forEach(function(k){ if(!D.days[k]) D.days[k]=SEED[k]; });
+  D.seedVersion=SEED_SURUM;
+  return true;
+}
+if(tohumla()){ try{localStorage.setItem(LS,JSON.stringify(D));}catch(e){} }
 
 /* ---------- kalıcılık ---------- */
 function saveLocal(touch){
@@ -1084,7 +1103,7 @@ function saveLocal(touch){
   try{localStorage.setItem(LS,JSON.stringify(D));}catch(e){}
   if(CFG.token&&CFG.owner&&CFG.repo){
     clearTimeout(pushTimer);
-    pushTimer=setTimeout(function(){push();},2500);
+    pushTimer=setTimeout(function(){pushTimer=null;push();},2500);
   }
 }
 function saveCfg(){try{localStorage.setItem(LSCFG,JSON.stringify(CFG));}catch(e){}}
@@ -1100,7 +1119,10 @@ function b64dec(b){
   for(var i=0;i<bin.length;i++) bytes[i]=bin.charCodeAt(i);
   return new TextDecoder().decode(bytes);
 }
-function api(){return "https://api.github.com/repos/"+CFG.owner+"/"+CFG.repo+"/contents/"+CFG.path}
+function api(){
+  var yol=String(CFG.path||"").split("/").filter(Boolean).map(encodeURIComponent).join("/");
+  return "https://api.github.com/repos/"+encodeURIComponent(CFG.owner)+"/"+encodeURIComponent(CFG.repo)+"/contents/"+yol;
+}
 function ghHeaders(){return {Authorization:"Bearer "+CFG.token,Accept:"application/vnd.github+json","X-GitHub-Api-Version":"2022-11-28"}}
 function setSync(s,m){syncState=s;syncMsg=m||"";renderFocus();}
 
@@ -1120,7 +1142,7 @@ function pull(force){
      if(!remote||!remote.days) throw new Error("Buluttaki dosya tanınmadı");
      var rt=remote.updatedAt||"", lt=D.updatedAt||"";
      if(force||rt>lt){
-       D=Object.assign({defaultUnit:"kg",seeded:true},remote);
+       D=normalize(remote); tohumla();
        try{localStorage.setItem(LS,JSON.stringify(D));}catch(e){}
        render();
        setSync("ok","Buluttan çekildi.");
@@ -1129,14 +1151,19 @@ function pull(force){
    .catch(function(e){setSync("err",e.message);});
 }
 
-function push(){
+function push(tekrar){
   if(!(CFG.token&&CFG.owner&&CFG.repo)) return Promise.resolve();
+  clearTimeout(pushTimer); pushTimer=null;
   setSync("busy");
   var body={message:"antrenman "+new Date().toISOString(),content:b64enc(JSON.stringify(D,null,1)),branch:CFG.branch};
   if(sha) body.sha=sha;
   return fetch(api(),{method:"PUT",headers:Object.assign({"Content-Type":"application/json"},ghHeaders()),body:JSON.stringify(body)})
    .then(function(r){
-     if(r.status===409||r.status===422){ return pull(false).then(function(){ return null; }); }
+     if(r.status===409||r.status===422){
+       if(tekrar) throw new Error("Bulutta çakışma çözülemedi, tekrar dene.");
+       // sha bayatlamış: güncel sürümü çek, sonra bir kez daha yaz
+       return pull(false).then(function(){ return push(true); }).then(function(){ return null; });
+     }
      if(!r.ok) return r.text().then(function(t){throw new Error("HTTP "+r.status+" "+t.slice(0,120));});
      return r.json();
    })
@@ -1190,25 +1217,41 @@ function toMarkdown(){
     return "## "+d.getDate()+" "+AYLAR_UZUN[d.getMonth()]+" "+d.getFullYear()+o+"\n"+body;
   }).filter(Boolean).join("\n\n");
 }
+function sayi(v){var x=Number(v);return isFinite(x)?x:0}
 function hydrate(obj){
   var days={};
   var src=(obj&&obj.days)||{};
+  if(typeof src!=="object") return days;
   Object.keys(src).forEach(function(k){
-    if(!/^\d{4}-\d{2}-\d{2}$/.test(k)||!src[k]) return;
     var v=src[k];
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(k)||!v||typeof v!=="object") return;
+    if(iso(parseD(k))!==k) return;
     days[k]={
       focus:["itis","cekis","bacak"].indexOf(v.focus)>=0?v.focus:null,
-      exercises:(v.exercises||[]).map(function(e){
-        return {id:uid(),name:String((e&&e.name)||"").trim(),unit:(e&&e.unit)==="lbs"?"lbs":"kg",
-          sets:((e&&e.sets)||[]).map(function(s){
-            return {id:uid(),w:Number(s&&s.w)||0,u:(s&&s.u)==="lbs"?"lbs":"kg",
-              reps:Math.max(0,Math.round(Number(s&&s.reps)||0)),rir:Math.max(0,Number(s&&s.rir)||0),
-              note:(s&&s.note)?String(s.note):""};
-          })};
+      exercises:(Array.isArray(v.exercises)?v.exercises:[]).map(function(e){
+        var sets=(e&&Array.isArray(e.sets)?e.sets:[]).map(function(s){
+          if(!s||typeof s!=="object") return null;
+          return {id:uid(),w:Math.max(0,sayi(s.w)),u:s.u==="lbs"?"lbs":"kg",
+            reps:Math.max(0,Math.round(sayi(s.reps))),rir:Math.max(0,sayi(s.rir)),
+            note:s.note?String(s.note):""};
+        }).filter(Boolean);
+        return {id:uid(),name:String((e&&e.name)||"").trim(),
+          unit:(e&&e.unit)==="lbs"?"lbs":(e&&e.unit)==="kg"?"kg":(sets.length?sets[sets.length-1].u:"kg"),
+          sets:sets};
       }).filter(function(e){return e.name})
     };
   });
   return days;
+}
+/* Diskten ya da buluttan gelen her kayıt buradan geçer: id'siz veya eksik alanlı
+   JSON (ör. AI'ın döndürdüğü sade biçim) yoksa uygulama yanlış seti düzenliyordu. */
+function normalize(p){
+  return {
+    defaultUnit:(p&&p.defaultUnit)==="lbs"?"lbs":"kg",
+    days:hydrate(p),
+    seedVersion:Number(p&&p.seedVersion)||((p&&p.seeded)?1:0),
+    updatedAt:(p&&typeof p.updatedAt==="string")?p.updatedAt:new Date(0).toISOString()
+  };
 }
 
 /* ---------- render ---------- */
@@ -1415,7 +1458,12 @@ function setSheet(exId,setId){
   function bump(n){var v=(parseFloat(wIn.value)||0)+n;wIn.value=String(Math.max(0,Math.round(v*100)/100))}
   f1.querySelector("#wMinus").onclick=function(){bump(u==="kg"?-2.5:-5)};
   f1.querySelector("#wPlus").onclick=function(){bump(u==="kg"?2.5:5)};
-  wIn.oninput=function(){wIn.value=wIn.value.replace(",",".").replace(/[^0-9.]/g,"")};
+  wIn.oninput=function(){
+    var v=wIn.value.replace(/,/g,".").replace(/[^0-9.]/g,"");
+    var i=v.indexOf(".");
+    if(i>=0) v=v.slice(0,i+1)+v.slice(i+1).replace(/\./g,"");
+    wIn.value=v;
+  };
 
   var f2=el("div","field");
   f2.innerHTML='<div class="fLabel"><span>Tekrar</span></div>'
@@ -1448,6 +1496,8 @@ function setSheet(exId,setId){
   sh.appendChild(f4);
   var nIn=f4.querySelector("#nIn"); nIn.value=mevcut?(mevcut.note||""):(son?son.note||"":"");
 
+  var uyari=el("p","hata"); uyari.style.display="none"; sh.appendChild(uyari);
+
   var btns=el("div","sheetBtns");
   if(setId){
     var dl=el("button","ghost danger","Seti sil");
@@ -1460,7 +1510,12 @@ function setSheet(exId,setId){
   var sv=el("button","primary",setId?"Güncelle":"Kaydet");
   sv.onclick=function(){
     var w=parseFloat(wIn.value), rp=parseInt(rIn.value,10)||0;
-    if(isNaN(w)||rp<=0) return;
+    if(isNaN(w)||w<0||rp<=0){
+      uyari.textContent=(isNaN(w)||w<0)?"Önce kiloyu gir.":"Tekrar sayısı en az 1 olmalı.";
+      uyari.style.display="block";
+      (isNaN(w)||w<0?wIn:rIn).focus();
+      return;
+    }
     var val={w:w,u:u,reps:rp,rir:rir,note:nIn.value.trim()};
     if(setId){ exr.sets=exr.sets.map(function(s){return s.id===setId?Object.assign({id:setId},val):s}); }
     else { exr.sets.push(Object.assign({id:uid()},val)); }
@@ -1545,8 +1600,11 @@ function menuSheet(){
   item("Yedek indir","antrenman-"+iso(new Date())+".json",function(){
     try{
       var blob=new Blob([JSON.stringify(D,null,1)],{type:"application/json"});
-      var a=document.createElement("a"); a.href=URL.createObjectURL(blob);
-      a.download="antrenman-"+iso(new Date())+".json"; a.click(); URL.revokeObjectURL(a.href);
+      var url=URL.createObjectURL(blob);
+      var a=document.createElement("a");
+      a.href=url; a.download="antrenman-"+iso(new Date())+".json"; a.rel="noopener";
+      document.body.appendChild(a); a.click();
+      setTimeout(function(){document.body.removeChild(a);URL.revokeObjectURL(url);},1000);
     }catch(e){}
   });
   sh.appendChild(m);
@@ -1561,11 +1619,16 @@ function textSheet(baslik,metin){
   var msg=el("p","iyi"); msg.style.display="none"; sh.appendChild(msg);
   var btns=el("div","sheetBtns");
   var cp=el("button","primary","Kopyala");
+  function bildir(ok,yazi){msg.textContent=yazi;msg.className=ok?"iyi":"hata";msg.style.display="block"}
+  function elle(){
+    try{ta.select();ta.setSelectionRange(0,metin.length);}catch(e){}
+    var ok=false; try{ok=document.execCommand("copy")}catch(e){}
+    bildir(ok,ok?"Kopyalandı.":"Kopyalanamadı. Kutudan seçip elle kopyala.");
+  }
   cp.onclick=function(){
     if(navigator.clipboard&&navigator.clipboard.writeText){
-      navigator.clipboard.writeText(metin).then(function(){msg.textContent="Kopyalandı.";msg.className="iyi";msg.style.display="block"})
-      .catch(function(){msg.textContent="Kopyalanamadı. Kutudan seçip elle kopyala.";msg.className="hata";msg.style.display="block"});
-    } else {ta.select();document.execCommand("copy");msg.textContent="Kopyalandı.";msg.style.display="block"}
+      navigator.clipboard.writeText(metin).then(function(){bildir(true,"Kopyalandı.")}).catch(elle);
+    } else elle();
   };
   var bk=el("button","ghost","Geri"); bk.onclick=menuSheet;
   btns.appendChild(cp);btns.appendChild(bk);sh.appendChild(btns);
@@ -1587,9 +1650,11 @@ function importSheet(){
     saveLocal(); closeSheet(); render();
   }
   var btns=el("div","sheetBtns");
-  var b1=el("button","primary","Birleştir"); b1.onclick=function(){uygula("merge")};
   var b2=el("button","ghost","Hepsini değiştir");
-  b2.onclick=function(){ if(!onay){onay=true;b2.className="ghost danger";b2.textContent="Emin misin? Tüm günler silinecek";} else uygula("replace"); };
+  function onayiBirak(){onay=false;b2.className="ghost";b2.textContent="Hepsini değiştir"}
+  var b1=el("button","primary","Birleştir"); b1.onclick=function(){onayiBirak();uygula("merge")};
+  b2.onclick=function(){ if(!onay){onay=true;b2.className="ghost danger";b2.textContent="Emin misin? Tüm günler silinecek";} else {onayiBirak();uygula("replace");} };
+  ta.oninput=function(){ if(onay) onayiBirak(); msg.style.display="none"; };
   var b3=el("button","ghost","Geri"); b3.onclick=menuSheet;
   btns.appendChild(b1);btns.appendChild(b2);btns.appendChild(b3);sh.appendChild(btns);
   sh.appendChild(el("p","muted note","Birleştir: aynı tarihli günler yenisiyle değişir, diğerleri kalır."));
@@ -1640,12 +1705,28 @@ function cloudSheet(){
 document.getElementById("menuBtn").onclick=menuSheet;
 document.getElementById("prev").onclick=function(){date=shiftD(date,-1);expandedEx=null;confirmEx=null;render()};
 document.getElementById("next").onclick=function(){date=shiftD(date,1);expandedEx=null;confirmEx=null;render()};
+var dateInput=document.getElementById("dateInput");
+// Girdi butonun üstünü kapladığı için dokunuş doğrudan ona gider (iOS'ta şart);
+// masaüstünde takvimi açmak için showPicker gerekiyor.
+dateInput.onclick=function(){ if(this.showPicker){ try{this.showPicker()}catch(e){} } };
+dateInput.onchange=function(e){if(e.target.value){date=e.target.value;expandedEx=null;confirmEx=null;render()}};
 document.getElementById("dateBtn").onclick=function(){
-  var i=document.getElementById("dateInput");
-  if(i.showPicker) i.showPicker(); else i.click();
+  if(dateInput.showPicker){ try{dateInput.showPicker();return}catch(e){} }
+  dateInput.click();
 };
-document.getElementById("dateInput").onchange=function(e){if(e.target.value){date=e.target.value;expandedEx=null;confirmEx=null;render()}};
-document.addEventListener("visibilitychange",function(){if(!document.hidden)pull(false)});
+
+// Gece yarısını geçince "bugün" yerinde saymasın
+function bugunuTazele(){
+  var t=iso(new Date());
+  if(t===today) return;
+  if(date===today) date=t;
+  today=t; render();
+}
+document.addEventListener("visibilitychange",function(){
+  if(document.hidden){ if(pushTimer) push(); }   // bekleyen gönderimi arka plana geçmeden boşalt
+  else { bugunuTazele(); pull(false); }
+});
+window.addEventListener("pagehide",function(){ if(pushTimer) push(); });
 window.addEventListener("keydown",function(e){if(e.key==="Escape")closeSheet()});
 
 render();
