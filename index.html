@@ -672,6 +672,24 @@ svg{display:block}
 .focusChoice.on{border-color:var(--line-strong);background:var(--accent-soft);color:var(--accent)}
 .focusChoice svg{width:19px;height:19px}
 
+.oneri{
+  margin:0 0 11px;
+  padding:12px 13px;
+  border:1px solid var(--line-strong);
+  border-radius:15px;
+  background:var(--accent-soft);
+}
+.oneriHead{display:flex;align-items:baseline;justify-content:space-between;gap:8px}
+.oneriHead strong{font-size:.85rem;color:var(--accent)}
+.oneriHead span{color:var(--muted);font-size:.72rem;white-space:nowrap}
+.oneriHedef{display:flex;align-items:baseline;gap:9px;margin-top:7px;font-family:var(--num)}
+.oneriHedef b{font-size:1.5rem;font-weight:700;line-height:1}
+.oneriHedef b em{font-style:normal;font-family:var(--sans);font-size:.72rem;font-weight:400;color:var(--muted);margin-left:3px}
+.oneriHedef i{font-style:normal;color:var(--muted);font-size:1rem}
+.oneriSebep{margin:8px 0 0;color:var(--muted);font-size:.78rem;line-height:1.45}
+.oneriGecmis{display:flex;flex-direction:column;gap:2px;margin-top:9px;padding-top:8px;
+  border-top:1px solid var(--line);color:var(--muted);font-size:.72rem;font-family:var(--num)}
+
 .trendTabs{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:12px}
 .trendTab{
   min-height:44px;
@@ -1273,6 +1291,58 @@ function normalize(p){
   };
 }
 
+/* ---------- sonraki seans önerisi ---------- */
+/* Ağırlık kademesi hareketin kendi geçmişinden gelir: aynı birimdeki farklı
+   ağırlıklar arasındaki en küçük fark. Makinenin gerçek adımını yakalar
+   (leg press'te 10 kg, kablo yığınında 2.2 kg). Üst sınırı aşan farklar
+   ısınma sıçramasıdır, elenir; hiçbiri kalmazsa 2.5 kg / 5 lbs. */
+function kademe(kayitlar,u,ustAgirlik){
+  var varsayilan=u==="lbs"?5:2.5, w=[];
+  kayitlar.forEach(function(x){x.sets.forEach(function(t){
+    if(t.u===u&&w.indexOf(t.w)<0) w.push(t.w);
+  })});
+  w.sort(function(a,b){return a-b});
+  // taban: 1 kg / 2 lbs altındaki farklar makine adımı değil, yazım farkıdır
+  var taban=u==="lbs"?2:1, sinir=Math.max(varsayilan,ustAgirlik*0.1), en=Infinity;
+  for(var i=1;i<w.length;i++){
+    var d=Math.round((w[i]-w[i-1])*100)/100;
+    if(d>=taban&&d<=sinir&&d<en) en=d;
+  }
+  return isFinite(en)?en:varsayilan;
+}
+
+/* Bir seansın üst seti (en ağır, eşitlikte en çok tekrarlı) ve en düşük RIR'ı */
+function seansOzet(sets){
+  var top=enIyiSet(sets);
+  var min=sets.reduce(function(a,t){return Math.min(a,t.rir)},Infinity);
+  return {w:top.w,u:top.u,kg:toKg(top.w,top.u),reps:top.reps,minRir:isFinite(min)?min:0};
+}
+
+/* Son 3 seansa bakıp sonraki hedefi önerir. İlk uyan kural kazanır:
+   1) tüm setlerde RIR >= 2                        -> bir kademe ağırlık artır, tekrar sabit
+   2) RIR 0 ve ağırlık artmadan tekrar düştü       -> ağırlığı koru, düşen tekrarı geri kazan
+   3) diğer                                        -> ağırlığı koru, 1 tekrar ekle */
+function oneri(name,k){
+  var kayitlar=gecmis(name).filter(function(x){return x.tarih<=k});
+  if(!kayitlar.length) return null;
+  var son3=kayitlar.slice(0,3).map(function(x){return {tarih:x.tarih,o:seansOzet(x.sets)}});
+  var son=son3[0], onc=son3[1];
+  var adim=kademe(kayitlar,son.o.u,son.o.w), r;
+  if(son.o.minRir>=2){
+    r={w:Math.round((son.o.w+adim)*100)/100,u:son.o.u,reps:son.o.reps,
+       sebep:"Son seansta tüm setlerde RIR ≥ 2. Ağırlığı bir kademe artır (+"+fmt(adim)+" "+son.o.u+")."};
+  } else if(son.o.minRir<0.5&&onc&&son.o.kg<=onc.o.kg&&son.o.reps<onc.o.reps){
+    r={w:son.o.w,u:son.o.u,reps:onc.o.reps,
+       sebep:"RIR 0'a rağmen tekrar düştü ("+onc.o.reps+" → "+son.o.reps+"). Ağırlığı koru, önceki tekrarı geri kazan."};
+  } else {
+    r={w:son.o.w,u:son.o.u,reps:son.o.reps+1,
+       sebep:"Son seansın en düşük RIR'ı "+fmt(son.o.minRir)+". Ağırlığı koru, 1 tekrar ekle."};
+  }
+  r.sonraki=(son.tarih===k);
+  r.gecmis=son3;
+  return r;
+}
+
 /* ---------- render ---------- */
 function render(){renderHeader();renderFocus();renderList()}
 
@@ -1357,6 +1427,21 @@ function renderList(){
         actions.appendChild(remove);
       }
       details.appendChild(actions);
+
+      var on=oneri(exr.name,date);
+      if(on){
+        var gh=on.gecmis.map(function(x){
+          var od=parseD(x.tarih);
+          return '<span>'+od.getDate()+" "+AYLAR[od.getMonth()]+" · "+fmt(x.o.w)+(x.o.u==="lbs"?" lb":"")
+            +" × "+x.o.reps+" · en düşük RIR "+fmt(x.o.minRir)+'</span>';
+        }).join("");
+        details.appendChild(el("div","oneri",
+          '<div class="oneriHead"><strong>'+(on.sonraki?"Sonraki seans hedefi":"Bu seans için hedef")+'</strong>'
+          +'<span>son '+on.gecmis.length+' seans</span></div>'
+          +'<div class="oneriHedef"><b>'+fmt(on.w)+'<em>'+on.u+'</em></b><i>×</i><b>'+on.reps+'<em>tekrar</em></b></div>'
+          +'<p class="oneriSebep">'+esc(on.sebep)+'</p>'
+          +'<div class="oneriGecmis">'+gh+'</div>'));
+      }
 
       var gs=gecenSefer(exr.name);
       if(gs){
