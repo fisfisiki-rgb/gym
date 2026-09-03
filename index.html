@@ -244,11 +244,18 @@ var SEED = {
   ex("Cable V bar row",[st(79,"kg",8,1),st(79,"kg",7,1),st(79,"kg",7,0)]),
   ex("Rear delt fly",[st(45,"kg",12,1),st(45,"kg",10,1),st(45,"kg",10,0)]),
   ex("Dependent biceps curl machine",[st(35.4,"kg",11,1),st(36,"kg",10,0),st(36,"kg",9,0)]),
-  ex("Dumbbell hammer curl",[st(20,"kg",14,1,"her el"),st(50,"lbs",10,1,"her el"),st(50,"lbs",10,0,"her el")])]}
+  ex("Dumbbell hammer curl",[st(20,"kg",14,1,"her el"),st(50,"lbs",10,1,"her el"),st(50,"lbs",10,0,"her el")])]},
+ "2026-09-03":{focus:"bacak",exercises:[
+  ex("Plate loaded leg press",[st(220,"kg",12,1,"+starting"),st(240,"kg",10,1),st(250,"kg",10,0)]),
+  ex("Seated leg curl machine",[st(59,"kg",12,1),st(64.1,"kg",7,0),st(59,"kg",9,0)]),
+  ex("Magnum seated calf plate loaded",[st(100,"lbs",12,0,"+starting"),st(100,"lbs",11,1),st(100,"lbs",12,0)]),
+  ex("Cable ab crunches",[st(50,"kg",13,1,"v bar"),st(50,"kg",9,1,"v bar"),st(45,"kg",10,0,"v bar")])]}
 };
+// SEED'e yeni gün eklendiğinde artır: uygulamayı zaten açmış cihazlar da alsın.
+var SEED_SURUM = 2;
 
 /* ---------- durum ---------- */
-var D = {defaultUnit:"kg",days:{},seeded:false,updatedAt:new Date(0).toISOString()};
+var D = {defaultUnit:"kg",days:{},seedVersion:0,updatedAt:new Date(0).toISOString()};
 var CFG = {owner:"",repo:"",path:"log.json",branch:"main",token:""};
 var date = iso(new Date()), today = iso(new Date());
 var sha = null, syncState = "off", syncMsg = "", pushTimer = null, confirmEx = null;
@@ -258,10 +265,14 @@ try{
   var raw=localStorage.getItem(LS);
   if(raw){var p=JSON.parse(raw); if(p&&p.days) D=normalize(p);}
 }catch(e){}
-if(!D.seeded){
-  D.days=Object.assign({},SEED,D.days); D.seeded=true;
-  try{localStorage.setItem(LS,JSON.stringify(D));}catch(e){}
+// SEED'de olup cihazda olmayan günleri ekler; mevcut kayıtların üstüne yazmaz.
+function tohumla(){
+  if(D.seedVersion>=SEED_SURUM) return false;
+  Object.keys(SEED).forEach(function(k){ if(!D.days[k]) D.days[k]=SEED[k]; });
+  D.seedVersion=SEED_SURUM;
+  return true;
 }
+if(tohumla()){ try{localStorage.setItem(LS,JSON.stringify(D));}catch(e){} }
 
 /* ---------- kalıcılık ---------- */
 function saveLocal(touch){
@@ -308,7 +319,7 @@ function pull(force){
      if(!remote||!remote.days) throw new Error("Buluttaki dosya tanınmadı");
      var rt=remote.updatedAt||"", lt=D.updatedAt||"";
      if(force||rt>lt){
-       D=normalize(remote); D.seeded=true;
+       D=normalize(remote); tohumla();
        try{localStorage.setItem(LS,JSON.stringify(D));}catch(e){}
        render();
        setSync("ok","Buluttan çekildi.");
@@ -415,7 +426,7 @@ function normalize(p){
   return {
     defaultUnit:(p&&p.defaultUnit)==="lbs"?"lbs":"kg",
     days:hydrate(p),
-    seeded:!!(p&&p.seeded),
+    seedVersion:Number(p&&p.seedVersion)||((p&&p.seeded)?1:0),
     updatedAt:(p&&typeof p.updatedAt==="string")?p.updatedAt:new Date(0).toISOString()
   };
 }
