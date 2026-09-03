@@ -672,6 +672,20 @@ svg{display:block}
 .focusChoice.on{border-color:var(--line-strong);background:var(--accent-soft);color:var(--accent)}
 .focusChoice svg{width:19px;height:19px}
 
+.trendTabs{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:12px}
+.trendTab{
+  min-height:44px;
+  padding:10px 6px;
+  border:1px solid var(--line);
+  border-radius:13px;
+  background:rgba(255,255,255,.03);
+  color:var(--text);
+  font-size:.9rem;
+  font-weight:700;
+}
+.trendTab.on{border-color:var(--line-strong);background:var(--accent-soft);color:var(--accent)}
+.trendTab:disabled{opacity:.38;font-weight:600}
+
 .chartPanel{
   padding:15px 13px 13px;
   background:rgba(255,255,255,.025);
@@ -1006,14 +1020,18 @@ var GUNLER = ["Paz","Pzt","Sal","Çar","Per","Cum","Cmt"];
 var GUNLER_UZUN = ["Pazar","Pazartesi","Salı","Çarşamba","Perşembe","Cuma","Cumartesi"];
 var AYLAR = ["Oca","Şub","Mar","Nis","May","Haz","Tem","Ağu","Eyl","Eki","Kas","Ara"];
 var AYLAR_UZUN = ["Ocak","Şubat","Mart","Nisan","Mayıs","Haziran","Temmuz","Ağustos","Eylül","Ekim","Kasım","Aralık"];
-var ODAK = [{id:"itis",ad:"İtiş"},{id:"cekis",ad:"Çekiş"},{id:"bacak",ad:"Bacak"}];
+var ODAK = [{id:"itis",ad:"Push"},{id:"cekis",ad:"Pull"},{id:"bacak",ad:"Legs"}];
+// Ekranda Push/Pull/Legs yazıyor ama kayıtlarda id itis/cekis/bacak kalıyor;
+// dışarıdan gelen JSON iki yazımı da kullanabilsin.
+var ODAK_ID = {itis:"itis",cekis:"cekis",bacak:"bacak",push:"itis",pull:"cekis",legs:"bacak"};
+function odakId(v){return ODAK_ID[String(v==null?"":v).trim().toLowerCase()]||null}
 var HAZIR = {
   itis:["Flat bench press","İncline machine plate loaded press","Single arm cable overhead triceps","Cable single arm lateral raise behind back","Shoulder press","Cable fly","Triceps pushdown"],
   cekis:["Cable wide grip lat pulldown","Cable V bar row","Rear delt fly","Dependent biceps curl machine","Dumbbell hammer curl","Chest supported row","Face pull"],
   bacak:["Plate loaded leg press","Seated leg curl machine","Magnum seated calf plate loaded","Cable ab crunches","Squat","Romanian deadlift","Leg extension"]
 };
 var SEMA = 'Antrenman günlüğüm aşağıda JSON olarak. Şema:\n'
- + 'days["YYYY-MM-DD"] = { focus: "itis"|"cekis"|"bacak"|null, exercises: [ { name, unit, sets: [ { w, u:"kg"|"lbs", reps, rir, note } ] } ] }\n'
+ + 'days["YYYY-MM-DD"] = { focus: "itis"(push)|"cekis"(pull)|"bacak"(legs)|null, exercises: [ { name, unit, sets: [ { w, u:"kg"|"lbs", reps, rir, note } ] } ] }\n'
  + 'rir = sette yedekte kalan tekrar (0-4, 0.5 basamaklı olabilir). w = kaldırılan ağırlık; tek kollu/tek elli hareketlerde tek taraf için.\n'
  + 'Bir şey değiştirirsen cevabın SADECE aynı şemada geçerli JSON olsun; açıklama, markdown veya kod bloğu ekleme.';
 
@@ -1082,6 +1100,7 @@ var D = {defaultUnit:"kg",days:{},seedVersion:0,updatedAt:new Date(0).toISOStrin
 var CFG = {owner:"",repo:"",path:"log.json",branch:"main",token:""};
 var date = iso(new Date()), today = iso(new Date());
 var sha = null, syncState = "off", syncMsg = "", pushTimer = null, confirmEx = null, expandedEx = null;
+var trendOdak = null;   // Gelişim sayfasında seçili odak
 
 try{var rawCfg=localStorage.getItem(LSCFG); if(rawCfg) CFG=Object.assign(CFG,JSON.parse(rawCfg));}catch(e){}
 try{
@@ -1227,7 +1246,7 @@ function hydrate(obj){
     if(!/^\d{4}-\d{2}-\d{2}$/.test(k)||!v||typeof v!=="object") return;
     if(iso(parseD(k))!==k) return;
     days[k]={
-      focus:["itis","cekis","bacak"].indexOf(v.focus)>=0?v.focus:null,
+      focus:odakId(v.focus),
       exercises:(Array.isArray(v.exercises)?v.exercises:[]).map(function(e){
         var sets=(e&&Array.isArray(e.sets)?e.sets:[]).map(function(s){
           if(!s||typeof s!=="object") return null;
@@ -1403,7 +1422,7 @@ function focusSheet(){
   sh.appendChild(wrap);
 }
 
-function volumeChart(data){
+function volumeChart(data,ad){
   var W=360,H=198,L=42,R=12,T=19,B=39,base=H-B;
   var max=Math.max.apply(null,data.map(function(x){return x.hacim})), ceiling=max?max*1.08:1;
   var pts=data.map(function(x,i){
@@ -1421,22 +1440,62 @@ function volumeChart(data){
     return '<text class="chartLabel" x="'+p.x.toFixed(1)+'" y="'+(H-9)+'" text-anchor="'+anchor+'">'+d.getDate()+" "+AYLAR[d.getMonth()]+'</text>';
   }).join("");
   var dots=pts.map(function(p,i){return '<circle class="chartDot'+(i===last?' last':'')+'" cx="'+p.x.toFixed(1)+'" cy="'+p.y.toFixed(1)+'" r="4"><title>'+hacimYazi(p.hacim)+'</title></circle>'}).join("");
-  return '<svg class="chartSvg" viewBox="0 0 '+W+' '+H+'" role="img" aria-label="Son '+data.length+' antrenmanın toplam hacim grafiği">'
+  return '<svg class="chartSvg" viewBox="0 0 '+W+' '+H+'" role="img" aria-label="Son '+data.length+' '+esc(ad||"")+' antrenmanının hacim grafiği">'
     +'<title>Antrenman hacmi gelişimi</title><defs><linearGradient id="volumeFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#C8FF58" stop-opacity=".24"/><stop offset="1" stop-color="#C8FF58" stop-opacity="0"/></linearGradient></defs>'
     +grid+'<text class="chartLabel" x="0" y="'+(T+4)+'">'+hacimYazi(max)+'</text><text class="chartLabel" x="25" y="'+(base+4)+'" text-anchor="end">0</text>'
     +'<path class="chartArea" d="'+area+'"/><path class="chartLine" d="'+path+'"/>'+dots+xLabels+'</svg>';
 }
 
-function trendSheet(){
-  var data=Object.keys(D.days).filter(function(k){return ozet(k).sets>0}).sort().slice(-8).map(function(k){
+// Tek bir odağın son 8 antrenmanı
+function trendVeri(odak){
+  return Object.keys(D.days).filter(function(k){
+    return D.days[k]&&D.days[k].focus===odak&&ozet(k).sets>0;
+  }).sort().slice(-8).map(function(k){
     var o=ozet(k); return {tarih:k,hacim:o.hacim,sets:o.sets};
   });
-  var sh=openSheet("Gelişim",data.length?"Son "+data.length+" antrenman · toplam hacim":"Antrenman hacmi");
-  if(!data.length){sh.appendChild(el("div","chartEmpty","Grafik için önce en az bir antrenman kaydet."));return}
-  var son=data[data.length-1], zirve=data.reduce(function(a,x){return x.hacim>a.hacim?x:a},data[0]);
-  var panel=el("div","chartPanel",'<div class="chartHead"><strong>Toplam hacim</strong><span class="chartLegend"><i class="chartLegendDot"></i>kg × tekrar</span></div>'+volumeChart(data)
-    +'<div class="chartStats"><div class="chartStat"><small>Son antrenman</small><strong>'+hacimYazi(son.hacim)+'</strong></div><div class="chartStat"><small>En yüksek</small><strong>'+hacimYazi(zirve.hacim)+'</strong></div></div>');
-  sh.appendChild(panel);
+}
+
+function trendSheet(){
+  var sh=openSheet("Gelişim","Odağa göre hacim");
+  var veri={}; ODAK.forEach(function(x){veri[x.id]=trendVeri(x.id)});
+  var dolu=ODAK.filter(function(x){return veri[x.id].length});
+  if(!dolu.length){
+    sh.appendChild(el("div","chartEmpty","Grafik için önce odağı Push, Pull veya Legs olarak işaretlenmiş bir antrenman kaydet."));
+    return;
+  }
+  // Seçim: hatırlanan odak, yoksa açık günün odağı, o da yoksa ilk dolu olan
+  if(!veri[trendOdak]||!veri[trendOdak].length){
+    var bugunku=gunu(date).focus;
+    trendOdak=(bugunku&&veri[bugunku]&&veri[bugunku].length)?bugunku:dolu[0].id;
+  }
+
+  var tabs=el("div","trendTabs");
+  ODAK.forEach(function(x){
+    var b=el("button","trendTab",esc(x.ad));
+    if(!veri[x.id].length){ b.disabled=true; b.title="Bu odakta kayıt yok"; }
+    b.onclick=function(){trendOdak=x.id;ciz()};
+    tabs.appendChild(b);
+  });
+  var panel=el("div");
+  sh.appendChild(tabs); sh.appendChild(panel);
+
+  function ciz(){
+    ODAK.forEach(function(x,i){
+      var b=tabs.children[i];
+      b.className="trendTab"+(x.id===trendOdak?" on":"");
+      b.setAttribute("aria-pressed",x.id===trendOdak?"true":"false");
+    });
+    var data=veri[trendOdak], ad=ODAK.filter(function(x){return x.id===trendOdak})[0].ad;
+    var alt=sh.querySelector(".sheetAlt");
+    if(alt) alt.textContent="Son "+data.length+" "+ad+" antrenmanı";
+    var son=data[data.length-1], zirve=data.reduce(function(a,x){return x.hacim>a.hacim?x:a},data[0]);
+    panel.innerHTML='<div class="chartPanel"><div class="chartHead"><strong>'+esc(ad)+' hacmi</strong>'
+      +'<span class="chartLegend"><i class="chartLegendDot"></i>kg × tekrar</span></div>'
+      +volumeChart(data,ad)
+      +'<div class="chartStats"><div class="chartStat"><small>Son antrenman</small><strong>'+hacimYazi(son.hacim)+'</strong></div>'
+      +'<div class="chartStat"><small>En yüksek</small><strong>'+hacimYazi(zirve.hacim)+'</strong></div></div></div>';
+  }
+  ciz();
 }
 
 /* ---------- set sheet ---------- */
