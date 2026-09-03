@@ -682,7 +682,8 @@ svg{display:block}
 .oneriHead{display:flex;align-items:baseline;justify-content:space-between;gap:8px}
 .oneriHead strong{font-size:.85rem;color:var(--accent)}
 .oneriHead span{color:var(--muted);font-size:.72rem;white-space:nowrap}
-.oneriHedef{display:flex;align-items:baseline;gap:9px;margin-top:7px;font-family:var(--num)}
+.oneriHedef{display:flex;align-items:baseline;flex-wrap:wrap;gap:6px 9px;margin-top:7px;font-family:var(--num)}
+.oneriHedef .rir{align-self:center;margin-left:2px}
 .oneriHedef b{font-size:1.5rem;font-weight:700;line-height:1}
 .oneriHedef b em{font-style:normal;font-family:var(--sans);font-size:.72rem;font-weight:400;color:var(--muted);margin-left:3px}
 .oneriHedef i{font-style:normal;color:var(--muted);font-size:1rem}
@@ -1319,9 +1320,10 @@ function seansOzet(sets){
 }
 
 /* Son 3 seansa bakıp sonraki hedefi önerir. İlk uyan kural kazanır:
-   1) tüm setlerde RIR >= 2                        -> bir kademe ağırlık artır, tekrar sabit
-   2) RIR 0 ve ağırlık artmadan tekrar düştü       -> ağırlığı koru, düşen tekrarı geri kazan
-   3) diğer                                        -> ağırlığı koru, 1 tekrar ekle */
+   1) tüm setlerde RIR >= 2                  -> bir kademe ağırlık artır, tekrar sabit,
+                                                hedef RIR bir azalır (kademe ~1 tekrarlık yedek götürür)
+   2) RIR 0 ve ağırlık artmadan tekrar düştü -> ağırlığı koru, düşen tekrarı o seansın RIR'ında geri kazan
+   3) diğer                                  -> ağırlığı koru, aynı eforda 1 tekrar ekle */
 function oneri(name,k){
   var kayitlar=gecmis(name).filter(function(x){return x.tarih<=k});
   if(!kayitlar.length) return null;
@@ -1330,13 +1332,14 @@ function oneri(name,k){
   var adim=kademe(kayitlar,son.o.u,son.o.w), r;
   if(son.o.minRir>=2){
     r={w:Math.round((son.o.w+adim)*100)/100,u:son.o.u,reps:son.o.reps,
-       sebep:"Son seansta tüm setlerde RIR ≥ 2. Ağırlığı bir kademe artır (+"+fmt(adim)+" "+son.o.u+")."};
+       rir:Math.max(0,son.o.minRir-1),
+       sebep:"Son seansta tüm setlerde RIR ≥ "+fmt(son.o.minRir)+". Ağırlığı bir kademe artır (+"+fmt(adim)+" "+son.o.u+"); kademe yaklaşık 1 tekrarlık yedek götürür."};
   } else if(son.o.minRir<0.5&&onc&&son.o.kg<=onc.o.kg&&son.o.reps<onc.o.reps){
-    r={w:son.o.w,u:son.o.u,reps:onc.o.reps,
-       sebep:"RIR 0'a rağmen tekrar düştü ("+onc.o.reps+" → "+son.o.reps+"). Ağırlığı koru, önceki tekrarı geri kazan."};
+    r={w:son.o.w,u:son.o.u,reps:onc.o.reps,rir:onc.o.minRir,
+       sebep:"RIR 0'a rağmen tekrar düştü ("+onc.o.reps+" → "+son.o.reps+"). Ağırlığı koru; önceki seansın "+onc.o.reps+" tekrarını RIR "+fmt(onc.o.minRir)+" hedefiyle geri kazan."};
   } else {
-    r={w:son.o.w,u:son.o.u,reps:son.o.reps+1,
-       sebep:"Son seansın en düşük RIR'ı "+fmt(son.o.minRir)+". Ağırlığı koru, 1 tekrar ekle."};
+    r={w:son.o.w,u:son.o.u,reps:son.o.reps+1,rir:son.o.minRir,
+       sebep:"Son seansın en düşük RIR'ı "+fmt(son.o.minRir)+". Ağırlığı koru, aynı eforda 1 tekrar ekle."};
   }
   r.sonraki=(son.tarih===k);
   r.gecmis=son3;
@@ -1438,7 +1441,8 @@ function renderList(){
         details.appendChild(el("div","oneri",
           '<div class="oneriHead"><strong>'+(on.sonraki?"Sonraki seans hedefi":"Bu seans için hedef")+'</strong>'
           +'<span>son '+on.gecmis.length+' seans</span></div>'
-          +'<div class="oneriHedef"><b>'+fmt(on.w)+'<em>'+on.u+'</em></b><i>×</i><b>'+on.reps+'<em>tekrar</em></b></div>'
+          +'<div class="oneriHedef"><b>'+fmt(on.w)+'<em>'+on.u+'</em></b><i>×</i><b>'+on.reps+'<em>tekrar</em></b>'
+          +'<span class="rir '+rirClass(on.rir)+'">RIR '+fmt(on.rir)+'</span></div>'
           +'<p class="oneriSebep">'+esc(on.sebep)+'</p>'
           +'<div class="oneriGecmis">'+gh+'</div>'));
       }
